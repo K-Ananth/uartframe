@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Form</title>
+    <script>
+        function toggleDataCount() {
+            let operation = document.getElementById("operation").value;
+            let dataCountDiv = document.getElementById("dataCountDiv");
+            let dataRow = document.getElementById("dataRow");
+            
+            if (operation === "Bulk Write" || operation === "Bulk Read") {
+                dataCountDiv.style.display = "block";
+            } else {
+                dataCountDiv.style.display = "none";
+            }
+            
+            if (operation.includes("Read")) {
+                dataRow.style.display = "none";
+            } else {
+                dataRow.style.display = "flex";
+            }
+        }
+
+        function cleanHexInput(value) {
+            return value.replace(/\s+/g, '').toUpperCase();
+        }
+
+        function hexPad(value, bytes) {
+            let hex = parseInt(value, 16).toString(16).toUpperCase().padStart(bytes * 2, '0');
+            return hex.match(/.{1,2}/g).join(' ');
+        }
+
+        function swapBytes(hexString) {
+            return hexString.match(/.{1,2}/g).reverse().join(' ');
+        }
+
+        function generateMessage(event) {
+            event.preventDefault();
+            let operation = document.getElementById("operation").value;
+            let address = cleanHexInput(document.getElementById("address").value);
+            let width = parseInt(document.getElementById("width").value);
+            let data = cleanHexInput(document.getElementById("data").value);
+            let width2 = parseInt(document.getElementById("width2").value);
+            let dataCount = cleanHexInput(document.getElementById("dataCount").value);
+            let byteSwap = document.getElementById("byteSwap").checked;
+            
+            let header = (operation.includes("Bulk")) ? "A1" : "A5";
+            
+            let addressBytes = width / 8;
+			
+            let addressHex = address.replace(/\s+/g, '').toUpperCase(); // Clean address
+			let paddedAddress = addressHex.padStart(2, '0'); // Ensure at least two digits
+
+			// Convert to full width size
+			let fullWidthHex = paddedAddress.padStart(addressBytes * 2, '0');
+
+			// Ensure correct byte order if needed
+			if (byteSwap) {
+				addressHex = swapBytes(fullWidthHex);
+			} else {
+				addressHex = fullWidthHex.match(/.{1,2}/g).join(' ');
+			}
+		          
+            let msb = parseInt(addressHex.slice(0, 2), 16);
+            if (operation.includes("Write")) {
+                msb |= 0x80;
+            } else {
+                msb &= 0x7F;
+            }
+            addressHex = msb.toString(16).toUpperCase().padStart(2, '0') + addressHex.slice(2);
+                      
+            let rawData = `<span style='color: blue;'>${header}</span> <span style='color: green;'>${addressHex}</span>`;
+            
+            if (operation === "Single Write") 
+			{
+                let dataBytes = width2 / 8;
+                let dataHex = cleanHexInput(data);
+                
+                if (dataHex.length / 2 < dataBytes) {
+                    dataHex = dataHex.padStart(dataBytes * 2, '0');
+                } else if (dataHex.length / 2 > dataBytes) {
+                    dataHex = dataHex.slice(0, dataBytes * 2);
+                }
+                
+                if (byteSwap) {
+                    dataHex = swapBytes(dataHex);
+                } else {
+                    dataHex = dataHex.match(/.{1,2}/g).join(' ');
+                }
+                
+                rawData += ` <span style='color: black;'>${dataHex}</span>`;
+            }
+			else if(operation.includes("Bulk")) {
+                let dataCountHex = parseInt(dataCount, 16).toString(16).toUpperCase().padStart(4, '0');
+                if (byteSwap) {
+                    dataCountHex = swapBytes(dataCountHex);
+                } else {
+                    dataCountHex = hexPad(dataCountHex, 2);
+                }
+                rawData += ` <span style='color: orange;'>${dataCountHex}</span>`;
+            }
+            
+            if (operation === "Bulk Write") {
+                let chunkSize = width2 / 8;
+                let dataChunks = data.match(new RegExp(`.{1,${chunkSize * 2}}`, 'g')) || [];
+                let coloredData = dataChunks.map((chunk, index) => {
+                    let swappedChunk = byteSwap ? swapBytes(chunk) : chunk.match(/.{1,2}/g).join(' ');
+                    let color = index % 2 === 0 ? 'black' : 'grey';
+                    return `<span style='color: ${color};'>${swappedChunk}</span>`;
+                }).join(' ');
+                rawData += ` ${coloredData}`;
+            } else if (operation.includes("Bulk Write")) {
+                let dataHex = data.match(/.{1,2}/g).join(' ');
+                if (!operation.includes("Bulk") && byteSwap) {
+                    dataHex = swapBytes(data);
+                }   
+				rawData += ` <span style='color: black;'>${dataHex}</span>`;
+            }
+            
+            let checksum = rawData.replace(/<[^>]+>/g, '').split(' ').reduce((acc, val) => acc ^ parseInt(val, 16), 0).toString(16).toUpperCase().padStart(2, '0');
+            
+            document.getElementById("generatedMessage").innerHTML = `${rawData} <span style='color: red;'>${checksum}</span>`;
+        }
+    </script>
+    <style>
+        .form-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .form-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .form-row label {
+            width: 80px;
+        }
+        .form-row input, .form-row select {
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <form class="form-container" onsubmit="generateMessage(event)">
+        <div class="form-row">
+            <label for="operation">Operation:</label>
+            <select id="operation" name="operation" onchange="toggleDataCount()">
+                <option value="Single Write">Single Write</option>
+                <option value="Single Read">Single Read</option>
+                <option value="Bulk Write">Bulk Write</option>
+                <option value="Bulk Read">Bulk Read</option>
+            </select>
+            <label for="byteSwap">Byte Swap:</label>
+            <input type="checkbox" id="byteSwap">
+        </div>
+        
+        <div class="form-row">
+            <label for="address">Address:</label>
+            <input type="text" id="address" name="address">
+            <label for="width">Width:</label>
+            <input type="text" id="width" name="width">
+        </div>
+        
+        <div class="form-row" id="dataRow">
+            <label for="data">Data:</label>
+            <input type="text" id="data" name="data">
+            <label for="width2">Width:</label>
+            <input type="text" id="width2" name="width2">
+        </div>
+        
+        <div class="form-row" id="dataCountDiv" style="display: none;">
+            <label for="dataCount">Data Count:</label>
+            <input type="text" id="dataCount" name="dataCount">
+        </div>
+        
+        <input type="submit" value="Generate">
+        
+        <div id="generatedMessage"></div>
+    </form>
+</body>
+</html>
